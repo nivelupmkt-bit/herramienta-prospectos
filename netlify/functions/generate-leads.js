@@ -6,7 +6,8 @@ exports.handler = async (event) => {
     }
 
     const { GEMINI_API_KEY } = process.env;
-    const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
+    // --- CORRECCIÓN: Se cambió 'gemini-pro' por 'gemini-1.5-flash-latest' ---
+    const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
 
     try {
         const { prompt } = JSON.parse(event.body);
@@ -34,10 +35,8 @@ exports.handler = async (event) => {
 
         const data = await response.json();
         
-        // 1. Extraer el texto crudo de la respuesta de la API
         let jsonText = data.candidates[0].content.parts[0].text;
         
-        // 2. Limpiar el texto: encontrar el primer '[' y el último ']' para extraer el string del array JSON
         const startIndex = jsonText.indexOf('[');
         const endIndex = jsonText.lastIndexOf(']');
 
@@ -48,12 +47,9 @@ exports.handler = async (event) => {
 
         const cleanedJsonString = jsonText.substring(startIndex, endIndex + 1);
 
-        // 3. Validar y enviar
         try {
-            // Prueba si es un JSON válido parseándolo aquí.
             JSON.parse(cleanedJsonString); 
             
-            // Si se parsea correctamente, envía el string limpio.
             return {
                 statusCode: 200,
                 headers: { 'Content-Type': 'application/json' },
