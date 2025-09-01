@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Herramienta de Generación de Prospectos</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .loader {
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid #3498db;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .table-container {
+            max-height: 400px;
+            overflow-y: auto;
+        }
+    </style>
+    <link rel="stylesheet" href="https://rsms.me/inter/inter.css">
+</head>
+
+<body class="bg-gray-100 flex items-center justify-center min-h-screen">
+    <div class="container mx-auto p-4 md:p-8">
+        <div class="bg-white rounded-2xl shadow-lg p-6 md:p-8 max-w-4xl mx-auto">
+            <header class="mb-6 text-center">
+                <h1 class="text-3xl md:text-4xl font-bold text-gray-800">Herramienta de Generación de Prospectos</h1>
+                <p class="text-gray-600 mt-2">Introduce tu consulta para encontrar empresas, emails y teléfonos. La IA buscará en Google, sitios web y más.</p>
+            </header>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                <div class="md:col-span-2">
+                    <label for="query" class="block text-sm font-medium text-gray-700 mb-1">Consulta:</label>
+                    <input type="text" id="query" placeholder="Ej: Agencias de marketing en Ciudad de México" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                </div>
+                <div>
+                    <label for="limit" class="block text-sm font-medium text-gray-700 mb-1">Nº de resultados:</label>
+                    <input type="number" id="limit" value="10" min="1" max="500" class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+                </div>
+            </div>
+
+            <div class="text-center mb-6">
+                <button id="generateBtn" class="bg-blue-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-blue-700 transition-all duration-300 transform hover:scale-105 shadow-md">
+                    Generar Prospectos
+                </button>
+            </div>
+
+            <div id="loading" class="hidden flex-col items-center justify-center my-6">
+                <div class="loader mb-4"></div>
+                <p class="text-gray-600">Generando prospectos, esto puede tardar unos momentos...</p>
+            </div>
+
+            <div id="error" class="hidden bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg relative my-4">
+                <strong class="font-bold">Error:</strong>
+                <span class="block sm:inline" id="errorMessage"></span>
+            </div>
+            
+            <div id="results" class="hidden">
+                 <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-2xl font-bold text-gray-800">Resultados</h2>
+                    <button id="downloadBtn" class="bg-green-600 text-white font-bold py-2 px-4 rounded-lg hover:bg-green-700 transition-all duration-300 shadow-md">
+                        Descargar Excel
+                    </button>
+                </div>
+                <div class="table-container border border-gray-200 rounded-lg">
+                    <table class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50 sticky top-0">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Empresa</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Teléfono</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resultsBody" class="bg-white divide-y divide-gray-200">
+                            <!-- Los resultados se insertarán aquí -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const generateBtn = document.getElementById('generateBtn');
+        const queryInput = document.getElementById('query');
+        const limitInput = document.getElementById('limit');
+        const loadingDiv = document.getElementById('loading');
+        const resultsDiv = document.getElementById('results');
+        const resultsBody = document.getElementById('resultsBody');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const errorDiv = document.getElementById('error');
+        const errorMessageSpan = document.getElementById('errorMessage');
+
+        let generatedData = [];
+
+        async function generateLeads() {
+            const query = queryInput.value.trim();
+            const limit = parseInt(limitInput.value, 10);
+
+            if (!query) {
+                showError('Por favor, introduce una consulta.');
+                return;
+            }
+
+            loadingDiv.style.display = 'flex';
+            resultsDiv.style.display = 'none';
+            errorDiv.style.display = 'none';
+            generateBtn.disabled = true;
+
+            try {
+                const prompt = `
+                    Genera una lista de ${limit} prospectos basada en la siguiente consulta: "${query}".
+                    Para cada prospecto, encuentra el nombre de la empresa, un correo electrónico de contacto y un número de teléfono.
+                    Busca esta información no solo en listados de negocios, sino también visitando sus sitios web si es necesario para obtener datos de contacto precisos.
+                    Devuelve los resultados como un array de objetos JSON. Cada objeto debe tener las claves "empresa", "email", y "telefono".
+                    Si no se encuentra un dato para un campo, déjalo como un string vacío "".
+                    El formato de salida debe ser un JSON válido, sin texto introductorio ni explicaciones adicionales.
+                `;
+
+                const payload = { prompt };
+                
+                // ¡Esta es la línea corregida!
+                const response = await fetch('/.netlify/functions/generate-leads', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Error en la llamada al servidor: ${response.status} . Detalles: ${errorText}`);
+                }
+
+                const data = await response.json();
+                
+                if (!Array.isArray(data)) {
+                   throw new Error("La respuesta de la API no es un array válido.");
+                }
+
+                generatedData = data;
+                displayResults(generatedData);
+
+            } catch (error) {
+                console.error('Error al generar prospectos:', error);
+                showError(`No se pudieron generar los prospectos. Inténtalo de nuevo. Detalle: ${error.message}`);
+            } finally {
+                loadingDiv.style.display = 'none';
+                generateBtn.disabled = false;
+            }
+        }
+
+        function displayResults(data) {
+            resultsBody.innerHTML = '';
+            if (data.length === 0) {
+                 resultsBody.innerHTML = '<tr><td colspan="3" class="text-center px-6 py-4">No se encontraron resultados.</td></tr>';
+            } else {
+                data.forEach(item => {
+                    const row = document.createElement('tr');
+                    row.innerHTML = `
+                        <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${item.empresa || 'N/A'}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.email || 'N/A'}</td>
+                        <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${item.telefono || 'N/A'}</td>
+                    `;
+                    resultsBody.appendChild(row);
+                });
+            }
+            resultsDiv.style.display = 'block';
+        }
+        
+        function downloadExcel() {
+            if (generatedData.length === 0) {
+                alert("No hay datos para descargar.");
+                return;
+            }
+            const worksheet = XLSX.utils.json_to_sheet(generatedData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "Prospectos");
+            XLSX.writeFile(workbook, "prospectos.xlsx");
+        }
+
+        function showError(message) {
+            errorMessageSpan.textContent = message;
+            errorDiv.style.display = 'block';
+        }
+
+        generateBtn.addEventListener('click', generateLeads);
+        downloadBtn.addEventListener('click', downloadExcel);
+
+    </script>
+</body>
+
+</html>
